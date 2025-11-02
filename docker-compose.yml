@@ -1,0 +1,153 @@
+version: "3.8"
+
+services:
+  # ------------------------------------------
+  # Application Services
+  # ------------------------------------------
+
+  # 1. Spring Boot "live-platform" Application (Core Service)
+  live-platform-app:
+    # build context points to the ./live-platform directory
+    # It will automatically find the Dockerfile in that directory
+    build: ./live-platform
+    image: live-platform-image:latest
+    container_name: live-platform-app-container
+    restart: on-failure
+    ports:
+      # Core service typically uses port 8080
+      - "8080:8080"
+    networks:
+      - microservice-net
+    env_file:
+      - ./.env
+    environment:
+      # Consistent environment variables, all read from .env
+      SPRING_DATASOURCE_URL: ${DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER} # <-- FIXED (was ${DB_NAME})
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_REDIS_HOST: ${REDIS_HOST}
+      SPRING_REDIS_PORT: ${REDIS_PORT}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+
+  # 2. Spring Boot "live-bill" Application
+  live-bill-app:
+    # build context points to the ./live-bill directory
+    # It will automatically find the Dockerfile in that directory
+    build: ./live-bill
+    image: live-bill-image:latest
+    container_name: live-bill-app-container
+    restart: on-failure
+    ports:
+      - "8081:8080"
+    networks:
+      - microservice-net
+    env_file:
+      - ./.env
+    environment:
+      # Consistent environment variables, all read from .env
+      SPRING_DATASOURCE_URL: ${DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_REDIS_HOST: ${REDIS_HOST}
+      SPRING_REDIS_PORT: ${REDIS_PORT}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+
+  # 3. Spring Boot "live-gift" Application
+  live-gift-app:
+    # build context points to the ./live-gift directory
+    # It will automatically find the Dockerfile in that directory
+    build: ./live-gift
+    image: live-gift-image:latest
+    container_name: live-gift-app-container
+    restart: on-failure
+    ports:
+      - "8082:8080"
+    networks:
+      - microservice-net
+    env_file:
+      - ./.env
+    environment:
+      # Consistent environment variables, all read from .env
+      SPRING_DATASOURCE_URL: ${DB_URL}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_REDIS_HOST: ${REDIS_HOST}
+      SPRING_REDIS_PORT: ${REDIS_PORT}
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+
+  # ------------------------------------------
+  # Infrastructure Services
+  # ------------------------------------------
+
+  # 4. MySQL 8.0
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      # Read configuration from .env file
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD} # <--- From .env
+      MYSQL_DATABASE: ${DB_NAME}        # <--- From .env
+    ports:
+      # Map host's port 3306 to container's port 3306
+      - "3306:3306"
+    volumes:
+      # Mount a named volume for persistent database data
+      - mysql-data:/var/lib/mysql
+    networks:
+      - microservice-net
+    healthcheck:
+      # This command correctly uses the MYSQL_ROOT_PASSWORD variable
+      # from the container's environment (which is set from the .env file)
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: --default-time-zone=Pacific/Auckland
+
+  # 5. Redis
+  redis-cache:
+    image: redis:latest
+    container_name: redis-cache
+    restart: unless-stopped
+    ports:
+      # Map port 6379 for local debugging
+      - "6379:6379"
+    volumes:
+      # Mount a named volume for persistent Redis data
+      - redis-data:/data
+    networks:
+      - microservice-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+# ------------------------------------------
+# Global Definitions
+# ------------------------------------------
+
+# Top-level network definition
+networks:
+  microservice-net:
+    driver: bridge
+
+# Top-level volume definitions
+volumes:
+  mysql-data:
+  redis-data:
